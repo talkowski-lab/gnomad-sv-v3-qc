@@ -2,6 +2,9 @@ version 1.0
 
 import "Structs.wdl"
 import "Tasks0506.wdl" as MiniTasks
+import "CleanVcf1b.wdl" as c1b
+import "CleanVcf5.wdl" as c5
+import "DropRedundantCNVs.wdl" as drc
 
 workflow CleanVcf {
   input {
@@ -27,7 +30,6 @@ workflow CleanVcf {
     RuntimeAttr? runtime_override_clean_vcf_3
     RuntimeAttr? runtime_override_clean_vcf_4
     RuntimeAttr? runtime_override_clean_vcf_5
-    RuntimeAttr? runtime_override_drop_redundant_cnvs
     RuntimeAttr? runtime_override_stitch_fragmented_cnvs
     RuntimeAttr? runtime_override_final_cleanup
 
@@ -83,7 +85,7 @@ workflow CleanVcf {
       runtime_attr_override=runtime_override_combine_step_1_sex_chr_revisions
   }
 
-  call CleanVcf1b {
+  call c1b.CleanVcf1b {
     input:
       intermediate_vcf=CombineStep1Vcfs.concat_vcf,
       sv_pipeline_docker=sv_pipeline_docker,
@@ -151,7 +153,7 @@ workflow CleanVcf {
       runtime_attr_override=runtime_override_combine_multi_ids_4
   }
 
-  call CleanVcf5 {
+  call c5.CleanVcf5 {
     input:
       revise_vcf_lines=CombineRevised4.outfile,
       normal_revise_vcf=CleanVcf1b.normal,
@@ -163,17 +165,16 @@ workflow CleanVcf {
       runtime_attr_override=runtime_override_clean_vcf_5
   }
 
-  call DropRedundantCnvs {
+  call drc.DropRedundantCNVs {
     input:
       vcf=CleanVcf5.polished,
       contig=contig,
-      sv_pipeline_docker=sv_pipeline_docker,
-      runtime_attr_override=runtime_override_drop_redundant_cnvs
+      sv_pipeline_docker=sv_pipeline_docker
   }
 
   call StitchFragmentedCnvs {
     input:
-      vcf=DropRedundantCnvs.cleaned_vcf_shard,
+      vcf=DropRedundantCNVs.cleaned_vcf_shard,
       contig=contig,
       prefix=prefix,
       sv_pipeline_docker=sv_pipeline_docker,
@@ -209,16 +210,10 @@ task CleanVcf1a {
     RuntimeAttr? runtime_attr_override
   }
 
-  # generally assume working disk size is ~2 * inputs, and outputs are ~2 *inputs, and inputs are not removed
-  # generally assume working memory is ~3 * inputs
   Float shard_size = size([vcf, background_list, ped_file], "GB")
-  Float base_disk_gb = 10.0
-  Float base_mem_gb = 2.0
-  Float input_mem_scale = 3.0
-  Float input_disk_scale = 5.0
   RuntimeAttr runtime_default = object {
-    mem_gb: base_mem_gb + shard_size * input_mem_scale,
-    disk_gb: ceil(base_disk_gb + shard_size * input_disk_scale),
+    mem_gb: 2.0 + shard_size * 12.0,
+    disk_gb: ceil(10 + shard_size * 40),
     cpu_cores: 1,
     preemptible_tries: 3,
     max_retries: 1,
@@ -389,12 +384,14 @@ task CleanVcf3{
   }
 
   command <<<
-    set -eu -o pipefail
+    set -euo pipefail
     
     /opt/sv-pipeline/04_variant_resolution/scripts/clean_vcf_part3.sh ~{rd_cn_revise}
 
     # Ensure there is at least one shard
-    touch shards/out.0_0.txt
+    if [ -z "$(ls -A shards/)" ]; then
+      touch shards/out.0_0.txt
+    fi
   >>>
 
   output {
@@ -411,21 +408,15 @@ task CleanVcf4 {
     RuntimeAttr? runtime_attr_override
   }
 
-  # generally assume working disk size is ~2 * inputs, and outputs are ~2 *inputs, and inputs are not removed
-  # generally assume working memory is ~3 * inputs
   Float input_size = size([rd_cn_revise, normal_revise_vcf], "GB")
-  Float base_disk_gb = 10.0
-  Float base_mem_gb = 2.0
-  Float input_mem_scale = 3.0
-  Float input_disk_scale = 5.0
   RuntimeAttr runtime_default = object {
-    mem_gb: base_mem_gb + input_size * input_mem_scale,
-    disk_gb: ceil(base_disk_gb + input_size * input_disk_scale),
-    cpu_cores: 1,
-    preemptible_tries: 3,
-    max_retries: 1,
-    boot_disk_gb: 10
-  }
+                                  mem_gb: 2.0 + input_size * 3.0,
+                                  disk_gb: 50,
+                                  cpu_cores: 1,
+                                  preemptible_tries: 3,
+                                  max_retries: 1,
+                                  boot_disk_gb: 10
+                                }
   RuntimeAttr runtime_override = select_first([runtime_attr_override, runtime_default])
   runtime {
     memory: "~{select_first([runtime_override.mem_gb, runtime_default.mem_gb])} GB"

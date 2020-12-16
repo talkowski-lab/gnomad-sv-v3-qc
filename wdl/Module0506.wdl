@@ -65,10 +65,18 @@ workflow Module0506 {
     RuntimeAttr? runtime_overide_get_discfile_size
     RuntimeAttr? runtime_override_update_sr_list
     RuntimeAttr? runtime_override_merge_pesr_depth
-    RuntimeAttr? runtime_override_breakpoint_overlap_filter
     RuntimeAttr? runtime_override_integrate_resolved_vcfs
     RuntimeAttr? runtime_override_rename_variants
     RuntimeAttr? runtime_override_rename_cleaned_samples
+
+    RuntimeAttr? runtime_override_breakpoint_overlap_filter_1a
+    RuntimeAttr? runtime_override_breakpoint_overlap_filter_1b
+    RuntimeAttr? runtime_override_breakpoint_overlap_filter_2
+    RuntimeAttr? runtime_override_breakpoint_overlap_filter_3
+    RuntimeAttr? runtime_override_breakpoint_overlap_filter_4
+    RuntimeAttr? runtime_override_breakpoint_overlap_filter_5
+    RuntimeAttr? runtime_override_breakpoint_overlap_filter_6
+    RuntimeAttr? runtime_override_breakpoint_overlap_filter_7
 
     # overrides for mini tasks
     RuntimeAttr? runtime_override_ids_from_vcf
@@ -216,7 +224,14 @@ workflow Module0506 {
       sv_base_mini_docker=sv_base_mini_docker,
       sv_pipeline_docker=sv_pipeline_docker,
       runtime_override_update_sr_list=runtime_override_update_sr_list,
-      runtime_override_breakpoint_overlap_filter=runtime_override_breakpoint_overlap_filter,
+      runtime_override_breakpoint_overlap_filter_1a=runtime_override_breakpoint_overlap_filter_1a,
+      runtime_override_breakpoint_overlap_filter_1b=runtime_override_breakpoint_overlap_filter_1b,
+      runtime_override_breakpoint_overlap_filter_2=runtime_override_breakpoint_overlap_filter_2,
+      runtime_override_breakpoint_overlap_filter_3=runtime_override_breakpoint_overlap_filter_3,
+      runtime_override_breakpoint_overlap_filter_4=runtime_override_breakpoint_overlap_filter_4,
+      runtime_override_breakpoint_overlap_filter_5=runtime_override_breakpoint_overlap_filter_5,
+      runtime_override_breakpoint_overlap_filter_6=runtime_override_breakpoint_overlap_filter_6,
+      runtime_override_breakpoint_overlap_filter_7=runtime_override_breakpoint_overlap_filter_7,
       runtime_override_integrate_resolved_vcfs=runtime_override_integrate_resolved_vcfs,
       runtime_override_rename_variants=runtime_override_rename_variants,
       runtime_override_subset_inversions=runtime_override_subset_inversions,
@@ -272,7 +287,6 @@ workflow Module0506 {
       merged_ped_file=ped_file,
       contig_list=contig_list,
       allosome_fai=allosome_fai,
-      max_shards_per_chrom=max_shards_per_chrom,
       max_shards_per_chrom_clean_vcf_step1=max_shards_per_chrom_clean_vcf_step1,
       min_records_per_shard_clean_vcf_step1=min_records_per_shard_clean_vcf_step1,
       samples_per_clean_vcf_step2_shard=samples_per_clean_vcf_step2_shard,

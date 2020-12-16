@@ -14,7 +14,6 @@ workflow Module0506Clean {
 
     File contig_list
     File allosome_fai
-    Int max_shards_per_chrom
     Int max_shards_per_chrom_clean_vcf_step1
     Int min_records_per_shard_clean_vcf_step1
     Int samples_per_clean_vcf_step2_shard
@@ -34,7 +33,6 @@ workflow Module0506Clean {
     RuntimeAttr? runtime_override_clean_vcf_3
     RuntimeAttr? runtime_override_clean_vcf_4
     RuntimeAttr? runtime_override_clean_vcf_5
-    RuntimeAttr? runtime_override_drop_redundant_cnvs
     RuntimeAttr? runtime_override_stitch_fragmented_cnvs
     RuntimeAttr? runtime_override_final_cleanup
     RuntimeAttr? runtime_override_split_vcf_to_clean
@@ -72,7 +70,6 @@ workflow Module0506Clean {
         runtime_override_clean_vcf_3=runtime_override_clean_vcf_3,
         runtime_override_clean_vcf_4=runtime_override_clean_vcf_4,
         runtime_override_clean_vcf_5=runtime_override_clean_vcf_5,
-        runtime_override_drop_redundant_cnvs=runtime_override_drop_redundant_cnvs,
         runtime_override_stitch_fragmented_cnvs=runtime_override_stitch_fragmented_cnvs,
         runtime_override_final_cleanup=runtime_override_final_cleanup,
         runtime_override_split_vcf_to_clean=runtime_override_split_vcf_to_clean,
