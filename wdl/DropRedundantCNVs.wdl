@@ -480,57 +480,95 @@ task DropRedundantCNVs_8 {
 
   command <<<
     set -euxo pipefail
-    mv ~{vids_to_remove_list_1} VIDs_to_remove.list
 
-    #Iterate over variants, pick info & coords from variant with largest N,
-    # and consolidate genotypes
-    sed 's/,/\n/g' ~{step2_variants_to_resolve_list} \
-      | sort | uniq \
-      > step2.variants_to_resolve.melted.list
+    python3 <<CODE
+    import sys
+    import pysam
+    import gzip
 
-    until [ $( cat step2.variants_to_resolve.melted.list | wc -l ) -eq 0 ]; do
-      #get next variant
-      VID=$( head -n1 step2.variants_to_resolve.melted.list )
+    sys.stderr.write("Reading step2...\n")
+    with open("~{step2_variants_to_resolve_list}") as f:
+        vids_sets_to_resolve = [set(line.strip().split(',')) for line in f.readlines()]
+        vids_list = sorted(list(set([x for y in vids_sets_to_resolve for x in y])))
 
-      #get all other variants from clusters containing this variant
-      { fgrep -w ${VID} ~{step2_variants_to_resolve_list} || true; } \
-        | sed 's/,/\n/g' | sort | uniq \
-        > step2.partners.tmp
+    sys.stderr.write("Reading vids to remove...\n")
+    with open("~{vids_to_remove_list_1}") as f:
+        vids_to_remove = set([line.strip() for line in f.readlines()])
 
-      #Print all genotypes to tmp file
-      zcat ~{vcf} | { fgrep -v "#" || true; } \
-        | { fgrep -wf step2.partners.tmp || true; } | cut -f10- \
-        > gts.tmp
-      #Select best genotypes to keep
-      /opt/sv-pipeline/04_variant_resolution/scripts/selectBestGT.R gts.tmp gts.best.tmp
+    sys.stderr.write("Reading preclustered intervals...\n")
+    with gzip.open("~{intervals_preclustered_bed}") as f:
+        intervals = {}
+        for lineb in f:
+            tokens = lineb.decode('utf-8').strip().split('\t')
+            vid = tokens[3]
+            intervals[vid] = tokens
 
-      #Select record with greatest total number of samples
-      bVID=$( zcat ~{intervals_preclustered_bed} \
-        | { fgrep -wf step2.partners.tmp || true; } \
-        | cut -f4-5 | sed 's/,/\t/g' \
-        | awk -v OFS="\t" '{ print $1, NF }' \
-        | sort -nrk2,2 \
-        | cut -f1 \
-        | head -n1 )
+    sys.stderr.write("Finding partners...\n")
+    partners = {}
+    all_partners = set([])
+    for vid in vids_list:
+        # get all other variants from clusters containing this variant
+        partners[vid] = set([p for vset in vids_sets_to_resolve if vid in vset for p in vset])
+        all_partners.update(partners[vid])
 
-      #Add new record to final append tmp file
-      paste <( zcat ~{vcf} | { fgrep -w ${bVID} || true; } | cut -f1-9 ) \
-        gts.best.tmp \
-        >> records_to_add.vcf
+    vids_to_remove.update(all_partners)
+    with open("vids_to_remove_2.list", 'w') as f:
+        f.writelines(sorted([v+"\n" for v in vids_to_remove]))
 
-      #Write list of variants to exclude from original VCF
-      cat step2.partners.tmp >> VIDs_to_remove.list
-      #Exclude variants from list of VIDs to resolve
-      { fgrep -wvf step2.partners.tmp step2.variants_to_resolve.melted.list || true; } \
-        > step2.variants_to_resolve.melted.list2
-      mv step2.variants_to_resolve.melted.list2 \
-      step2.variants_to_resolve.melted.list
-    done
+    sys.stderr.write("Scanning vcf...\n")
+    vcf = pysam.VariantFile("~{vcf}")
+    records = {r.id: r for r in vcf if r.id in all_partners}
+
+    def count_gts(record):
+        result = [0, 0, 0]
+        num_samples = len(record.samples)
+        for g in [record.samples[i]['GT'] for i in range(num_samples)]:
+            if g == (0, 0):
+                result[1] += 1
+            elif g == (None, None):
+                result[2] += 1
+            else:
+                result[0] += 1
+        return result
+
+    def get_best_score_vid(scores):
+        return sorted(scores.items(), key=lambda x: x[1])[-1][0]
+
+    sys.stderr.write("Generating records...\n")
+    with open("records_to_add.vcf", 'w') as f:
+        processed_vids = set([])
+        for vid in vids_list:
+            if vid in processed_vids:
+                continue
+            vid_partners = partners[vid]
+            processed_vids.update(vid_partners)
+            partner_intervals = [intervals[p] for p in vid_partners]
+            most_samples_vid = sorted(partner_intervals, key=lambda x : len(x[4].split(',')))[-1][3]
+            x = sorted(partner_intervals, key=lambda x : len(x[4].split(',')))
+            best_genotype_vid = None
+            best_non_ref = -1
+            best_ref = -1
+            scores = {p: count_gts(records[p]) for p in vid_partners}
+            scores_non_ref = {p: scores[p][0] for p in vid_partners if scores[p][0] > 0}
+            scores_ref = {p: scores[p][1] for p in vid_partners if scores[p][1] > 0}
+            scores_no_call = {p: scores[p][2] for p in vid_partners if scores[p][2] > 0}
+            if len(scores_non_ref) > 0:
+                best_genotype_vid = get_best_score_vid(scores_non_ref)
+            elif len(scores_ref) > 0:
+                best_genotype_vid = get_best_score_vid(scores_ref)
+            else:
+                best_genotype_vid = get_best_score_vid(scores_no_call)
+            s1 = str(records[most_samples_vid]).split('\t')[0:9]
+            s2 = str(records[best_genotype_vid]).split('\t', 9)
+            f.write("\t".join(s1) + "\t" + s2[9])
+    CODE
+
+    cat ~{vids_to_remove_list_1} vids_to_remove_2.list | sort | uniq > vids_to_remove.list
   >>>
 
   output {
     File records_to_add_vcf = "records_to_add.vcf"
-    File vids_to_remove_list_2 = "VIDs_to_remove.list"
+    File vids_to_remove_list_2 = "vids_to_remove.list"
   }
 }
 
