@@ -179,9 +179,9 @@ task MakeSubsetVcf {
   }
   command <<<
 
-    set -euo pipefail
-    zcat ~{vcf} | fgrep -e "#" > ~{prefix}.vcf;
-    zcat ~{vcf} | fgrep -w -f <(cut -f4 ~{bed}) >> ~{prefix}.vcf;
+    set -euxo pipefail
+    zcat ~{vcf} | fgrep -e "#" > ~{prefix}.vcf
+    zcat ~{vcf} | { fgrep -w -f <(cut -f4 ~{bed}) || true; } >> ~{prefix}.vcf
     bgzip ~{prefix}.vcf
 
   >>>
