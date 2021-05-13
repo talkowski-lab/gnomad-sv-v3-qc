@@ -245,15 +245,15 @@ task CleanVcf1b_3 {
     set -euxo pipefail
     ##pull out the depth based copy number variant for each normal overlapping variant##
     int_vcf_gz=~{int_vcf}
-    { cat <(zcat $int_vcf_gz|awk -F"\t" '{if ($1~"#") print}') \
-    <(awk '{print $4 "\n" $10}' ~{normoverlap}|sort -u|fgrep -wf - <(zcat $int_vcf_gz)) || true; }\
-    |awk '{if ($1!~"#") $1=$3;print}' OFS="\t" \
-    |awk '{if ($1~"#" || $5=="<DEL>" || $5=="<DUP>") print}' \
-    |vcftools --vcf - --stdout --extract-FORMAT-info RD_CN \
-    |awk -F"\t" 'NR==1{for (i=3;i<=NF;i++) header[i]=$i} NR>1{for(j=3;j<=NF;j++) print $1"@"header[j] "\t" $j }' \
-    |sort -k1,1 \
-    |gzip \
-    >RD_CN.normalcheck.FORMAT.gz
+    cat <(zcat $int_vcf_gz|awk -F"\t" '{if ($1~"#") print}') \
+        <(awk '{print $4 "\n" $10}' ~{normoverlap}|sort -u|fgrep -wf - <(zcat $int_vcf_gz)) \
+      |awk '{if ($1!~"#") $1=$3;print}' OFS="\t" \
+      |awk '{if ($1~"#" || $5=="<DEL>" || $5=="<DUP>") print}' \
+      |vcftools --vcf - --stdout --extract-FORMAT-info RD_CN \
+      |awk -F"\t" 'NR==1{for (i=3;i<=NF;i++) header[i]=$i} NR>1{for(j=3;j<=NF;j++) print $1"@"header[j] "\t" $j }' \
+      |sort -k1,1 \
+      |gzip \
+      >RD_CN.normalcheck.FORMAT.gz
   >>>
 
   output {
@@ -296,14 +296,14 @@ task CleanVcf1b_4 {
     set -euxo pipefail
     ##pull out evidence supporting each normal overlapping variant##
     int_vcf_gz=~{int_vcf}
-    { cat <(zcat $int_vcf_gz|awk -F"\t" '{if ($1~"#") print}') \
-    <(awk '{print $4 "\n" $10}' ~{normoverlap}|sort -u|fgrep -wf - <(zcat $int_vcf_gz)) || true; }\
-    |awk '{if ($1!~"#") $1=$3;print}' OFS="\t"\
-    |vcftools --vcf - --stdout --extract-FORMAT-info EV \
-    |awk -F"\t" 'NR==1{for (i=3;i<=NF;i++) header[i]=$i} NR>1{for(j=3;j<=NF;j++) print $1"@"header[j] "\t" $j }' \
-    |sort -k1,1 \
-    |gzip \
-    >EV.normalcheck.FORMAT.gz
+    cat <(zcat $int_vcf_gz|awk -F"\t" '{if ($1~"#") print}') \
+      <(awk '{print $4 "\n" $10}' ~{normoverlap}|sort -u|fgrep -wf - <(zcat $int_vcf_gz)) \
+      |awk '{if ($1!~"#") $1=$3;print}' OFS="\t"\
+      |vcftools --vcf - --stdout --extract-FORMAT-info EV \
+      |awk -F"\t" 'NR==1{for (i=3;i<=NF;i++) header[i]=$i} NR>1{for(j=3;j<=NF;j++) print $1"@"header[j] "\t" $j }' \
+      |sort -k1,1 \
+      |gzip \
+      >EV.normalcheck.FORMAT.gz
   >>>
 
   output {
@@ -460,9 +460,9 @@ task CleanVcf1b_7 {
   command <<<
     set -euxo pipefail
     ##Update genotypes##
-    { zfgrep -wf <(awk '{print $1}' ~{geno_normal_revise}|sort -u) ~{int_vcf} || true; }\
+    { zfgrep -wf <(awk '{print $1}' ~{geno_normal_revise}|sort -u) ~{int_vcf} || [[ $? == 1 ]]; }\
     |bgzip \
-    >subset.vcf.gz || true
+    >subset.vcf.gz
   >>>
 
   output {
@@ -571,7 +571,7 @@ task CleanVcf1b_9 {
   Float input_size = size([int_vcf, normal_revise_vcf_lines], "GB")
   RuntimeAttr runtime_default = object {
                                   mem_gb: 2.0 + input_size * 3.0,
-                                  disk_gb: ceil(10.0 + input_size * 5.0),
+                                  disk_gb: ceil(10.0 + input_size * 10.0),
                                   cpu_cores: 1,
                                   preemptible_tries: 0,
                                   max_retries: 1,
@@ -591,12 +591,11 @@ task CleanVcf1b_9 {
   command <<<
     set -euxo pipefail
     ##rewrite vcf with updated genotypes##
-
-    cat <(zcat ~{int_vcf}|fgrep -wvf <(awk '{print $3}' ~{normal_revise_vcf_lines}|sort -u)) \
-    <(sed 's/\t$//' ~{normal_revise_vcf_lines}) \
-    |vcf-sort \
-    |bgzip \
-    >normal.revise.vcf.gz || true
+    cat <(zcat ~{int_vcf} | fgrep -wvf <(awk '{print $3}' ~{normal_revise_vcf_lines}|sort -u)) \
+      <(sed 's/\t$//' ~{normal_revise_vcf_lines}) \
+      |vcf-sort \
+      |bgzip \
+      >normal.revise.vcf.gz
 
     bcftools index normal.revise.vcf.gz
   >>>
@@ -641,10 +640,10 @@ task CleanVcf1b_10 {
     set -euxo pipefail
     ##get copy state per variant##
     zcat ~{normal_revise_vcf} \
-    |awk '{if ($1!~"#") $1=$3;print}' OFS="\t" \
-    |vcftools --vcf - --stdout --extract-FORMAT-info RD_CN \
-    |gzip \
-    >copystate.RD_CN.FORMAT.gz
+      |awk '{if ($1!~"#") $1=$3;print}' OFS="\t" \
+      |vcftools --vcf - --stdout --extract-FORMAT-info RD_CN \
+      |gzip \
+      >copystate.RD_CN.FORMAT.gz
   >>>
 
   output {
@@ -685,9 +684,9 @@ task CleanVcf1b_11 {
     set -euxo pipefail
     ##get copy state per variant##
     zcat ~{copystate_rd_cn} \
-    |awk 'NR>1{for(i=3;i<=NF;i++) lines[$1 "\t" $i]++ } END{for (x in lines) print x}' \
-    |gzip \
-    >copystate.per.variant.txt.gz
+      |awk 'NR>1{for(i=3;i<=NF;i++) lines[$1 "\t" $i]++ } END{for (x in lines) print x}' \
+      |gzip \
+      >copystate.per.variant.txt.gz
   >>>
 
   output {
@@ -730,10 +729,10 @@ task CleanVcf1b_12 {
     ##Find multi-allelic for del or dup ; CNV >1kb we trust depth ##
     ##del##
     zcat ~{copystate_per_variant} \
-    |awk '{if ($2!="." && $2>3) print $1}' \
-    |sort -u \
-    |fgrep -wf <(zcat ~{int_bed}|awk -F"\t" '{if ($5=="DEL" && $3-$2>=1000) print $4}' ) \
-    >multi.cnvs.del.txt || true
+      |awk '{if ($2!="." && $2>3) print $1}' \
+      |sort -u \
+      |{ fgrep -wf <(zcat ~{int_bed}|awk -F"\t" '{if ($5=="DEL" && $3-$2>=1000) print $4}' ) || [[ $? == 1 ]]; } \
+      >multi.cnvs.del.txt
   >>>
 
   output {
@@ -777,10 +776,10 @@ task CleanVcf1b_13 {
     ##dup##
     mv ~{multi_del} multi.cnvs.txt
     zcat ~{copystate_per_variant} \
-    |awk '{if ($2!="." && ($2<1 || $2>4)) print $1}' \
-    |sort -u \
-    |fgrep -wf <(zcat ~{int_bed}|awk -F"\t" '{if ($5=="DUP" && $3-$2>=1000) print $4}' ) \
-    >>multi.cnvs.txt || true
+      |awk '{if ($2!="." && ($2<1 || $2>4)) print $1}' \
+      |sort -u \
+      |{ fgrep -wf <(zcat ~{int_bed}|awk -F"\t" '{if ($5=="DUP" && $3-$2>=1000) print $4}' ) || [[ $? == 1 ]]; } \
+      >>multi.cnvs.txt
   >>>
 
   output {
