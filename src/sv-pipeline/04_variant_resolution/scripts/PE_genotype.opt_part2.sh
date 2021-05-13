@@ -78,7 +78,7 @@ fi
 
 ##add back variants with no PE support##
 awk '{print $1}' pe.variant.quality.final.txt \
-  |fgrep -wvf - <(zcat pe.geno.final.txt.gz) \
+  |{ fgrep -wvf - <(zcat pe.geno.final.txt.gz) || [[ $? == 1 ]]; }  \
   |awk '{print $1}' \
   |sort -u \
   |awk '{print $1 "\t" 0}' \
