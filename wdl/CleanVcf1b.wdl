@@ -116,8 +116,8 @@ task CleanVcf1b_1 {
 
   Float input_size = size(intermediate_vcf, "GB")
   RuntimeAttr runtime_default = object {
-                                  mem_gb: 2.0 + input_size * 3.0,
-                                  disk_gb: ceil(10.0 + input_size * 5.0),
+                                  mem_gb: 2.0 + input_size * 1.5,
+                                  disk_gb: ceil(10.0 + input_size * 4.0),
                                   cpu_cores: 1,
                                   preemptible_tries: 0,
                                   max_retries: 1,
@@ -175,8 +175,8 @@ task CleanVcf1b_2 {
 
   Float input_size = size(int_bed, "GB")
   RuntimeAttr runtime_default = object {
-                                  mem_gb: 2.0 + input_size * 3.0,
-                                  disk_gb: ceil(10.0 + input_size * 5.0),
+                                  mem_gb: 3.75,
+                                  disk_gb: ceil(10.0 + input_size * 2.0),
                                   cpu_cores: 1,
                                   preemptible_tries: 0,
                                   max_retries: 1,
@@ -223,8 +223,8 @@ task CleanVcf1b_3 {
 
   Float input_size = size([int_vcf, normoverlap], "GB")
   RuntimeAttr runtime_default = object {
-                                  mem_gb: 2.0 + input_size * 3.0,
-                                  disk_gb: ceil(10.0 + input_size * 5.0),
+                                  mem_gb: 3.75,
+                                  disk_gb: ceil(10.0 + input_size * 7.0),
                                   cpu_cores: 1,
                                   preemptible_tries: 0,
                                   max_retries: 1,
@@ -274,8 +274,8 @@ task CleanVcf1b_4 {
 
   Float input_size = size([int_vcf, normoverlap], "GB")
   RuntimeAttr runtime_default = object {
-                                  mem_gb: 2.0 + input_size * 3.0,
-                                  disk_gb: ceil(10.0 + input_size * 5.0),
+                                  mem_gb: 3.75,
+                                  disk_gb: ceil(10.0 + input_size * 7.0),
                                   cpu_cores: 1,
                                   preemptible_tries: 0,
                                   max_retries: 1,
@@ -322,8 +322,8 @@ task CleanVcf1b_5 {
 
   Float input_size = size(normoverlap, "GB")
   RuntimeAttr runtime_default = object {
-                                  mem_gb: 2.0 + input_size * 3.0,
-                                  disk_gb: ceil(10.0 + input_size * 5.0),
+                                  mem_gb: 3.75,
+                                  disk_gb: ceil(10.0 + input_size * 3.0),
                                   cpu_cores: 1,
                                   preemptible_tries: 0,
                                   max_retries: 1,
@@ -388,8 +388,8 @@ task CleanVcf1b_6 {
 
   Float input_size = size([overlap_test, rd_cn_normcheck, ev_normcheck], "GB")
   RuntimeAttr runtime_default = object {
-                                  mem_gb: 2.0 + input_size * 3.0,
-                                  disk_gb: ceil(10.0 + input_size * 5.0),
+                                  mem_gb: 3.75,
+                                  disk_gb: ceil(10.0 + input_size * 4.0),
                                   cpu_cores: 1,
                                   preemptible_tries: 0,
                                   max_retries: 1,
@@ -439,8 +439,8 @@ task CleanVcf1b_7 {
 
   Float input_size = size([int_vcf, geno_normal_revise], "GB")
   RuntimeAttr runtime_default = object {
-                                  mem_gb: 2.0 + input_size * 3.0,
-                                  disk_gb: ceil(10.0 + input_size * 5.0),
+                                  mem_gb: 3.75,
+                                  disk_gb: ceil(10.0 + input_size * 3.0),
                                   cpu_cores: 1,
                                   preemptible_tries: 0,
                                   max_retries: 1,
@@ -483,8 +483,8 @@ task CleanVcf1b_8 {
 
   Float input_size = size([subset_vcf, geno_normal_revise, col], "GB")
   RuntimeAttr runtime_default = object {
-                                  mem_gb: 2.0 + input_size * 3.0,
-                                  disk_gb: ceil(10.0 + input_size * 5.0),
+                                  mem_gb: 3.75,
+                                  disk_gb: ceil(10.0 + input_size * 10.0),
                                   cpu_cores: 1,
                                   preemptible_tries: 0,
                                   max_retries: 1,
@@ -570,8 +570,8 @@ task CleanVcf1b_9 {
 
   Float input_size = size([int_vcf, normal_revise_vcf_lines], "GB")
   RuntimeAttr runtime_default = object {
-                                  mem_gb: 2.0 + input_size * 3.0,
-                                  disk_gb: ceil(10.0 + input_size * 10.0),
+                                  mem_gb: 15,
+                                  disk_gb: ceil(10.0 + input_size * 50.0),
                                   cpu_cores: 1,
                                   preemptible_tries: 0,
                                   max_retries: 1,
@@ -591,7 +591,8 @@ task CleanVcf1b_9 {
   command <<<
     set -euxo pipefail
     ##rewrite vcf with updated genotypes##
-    cat <(zcat ~{int_vcf} | fgrep -wvf <(awk '{print $3}' ~{normal_revise_vcf_lines}|sort -u)) \
+    awk '{print $3}' ~{normal_revise_vcf_lines}|sort -u > vids.list
+    cat <(zcat ~{int_vcf} | fgrep -wvf vids.list) \
       <(sed 's/\t$//' ~{normal_revise_vcf_lines}) \
       |vcf-sort \
       |bgzip \
@@ -618,7 +619,7 @@ task CleanVcf1b_10 {
 
   Float input_size = size(normal_revise_vcf, "GB")
   RuntimeAttr runtime_default = object {
-                                  mem_gb: 2.0 + input_size * 3.0,
+                                  mem_gb: 15,
                                   disk_gb: ceil(10.0 + input_size * 5.0),
                                   cpu_cores: 1,
                                   preemptible_tries: 0,
@@ -662,7 +663,7 @@ task CleanVcf1b_11 {
 
   Float input_size = size(copystate_rd_cn, "GB")
   RuntimeAttr runtime_default = object {
-                                  mem_gb: 2.0 + input_size * 3.0,
+                                  mem_gb: 15,
                                   disk_gb: ceil(10.0 + input_size * 5.0),
                                   cpu_cores: 1,
                                   preemptible_tries: 0,
@@ -706,7 +707,7 @@ task CleanVcf1b_12 {
 
   Float input_size = size([int_bed, copystate_per_variant], "GB")
   RuntimeAttr runtime_default = object {
-                                  mem_gb: 2.0 + input_size * 3.0,
+                                  mem_gb: 15,
                                   disk_gb: ceil(10.0 + input_size * 5.0),
                                   cpu_cores: 1,
                                   preemptible_tries: 0,
@@ -753,7 +754,7 @@ task CleanVcf1b_13 {
 
   Float input_size = size([int_bed, multi_del, copystate_per_variant], "GB")
   RuntimeAttr runtime_default = object {
-                                  mem_gb: 2.0 + input_size * 3.0,
+                                  mem_gb: 15,
                                   disk_gb: ceil(10.0 + input_size * 5.0),
                                   cpu_cores: 1,
                                   preemptible_tries: 0,
