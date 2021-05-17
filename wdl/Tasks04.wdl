@@ -127,7 +127,7 @@ task AddGenotypes {
   }
   command <<<
 
-    set -euo pipefail
+    set -euxo pipefail
 
     # in some cases a vargq cannot be computed and is returned as '.'. Remove these from the final vcf.
     gzip -cd ~{varGQ} | awk '$5 == "." {print $1}' > bad.vargq.list
