@@ -429,9 +429,94 @@ task CleanVcf4 {
   }
 
   command <<<
-    set -eu -o pipefail
+    set -euo pipefail
+    python3 <<CODE
+    import pysam
+    import os
 
-    /opt/sv-pipeline/04_variant_resolution/scripts/clean_vcf_part4.sh ~{rd_cn_revise} ~{normal_revise_vcf}
+    # Inputs
+    REGENO_FILE="~{rd_cn_revise}"
+    VCF_FILE="~{normal_revise_vcf}"
+
+    # Build map of variants to regenotype
+    with open(REGENO_FILE) as f:
+      vid_sample_cn_map = {}
+      for line in f:
+        tokens = line.strip().split('\t')
+        vid = tokens[0]
+        if vid not in vid_sample_cn_map:
+          vid_sample_cn_map[vid] = []
+        vid_sample_cn_map[vid].append(tuple(tokens[1:]))
+
+    # Traverse VCF and replace genotypes
+    with open("revise.vcf.lines.txt", "w") as f:
+      vcf = pysam.VariantFile(VCF_FILE)
+      num_vcf_records = 0
+      for record in vcf:
+        num_vcf_records += 1
+        if record.id not in vid_sample_cn_map:
+          continue
+        for entry in vid_sample_cn_map[record.id]:
+          s = record.samples[entry[0]]
+          s['GT'] = (0, 1)
+          s['RD_CN'] = int(entry[1])
+        f.write(str(record))
+      vcf.close()
+
+    # Get batch size
+    regeno_file_name_tokens = os.path.basename(REGENO_FILE).split('.')[1].split('_')
+    batch_num = max(int(regeno_file_name_tokens[0]), 1)
+    total_batch = max(int(regeno_file_name_tokens[1]), 1)
+    segments = num_vcf_records / float(total_batch)
+    print("{} {} {}".format(batch_num, total_batch, segments))
+
+    vcf = pysam.VariantFile(VCF_FILE)
+    # Max sample count with PE or SR GT over 3
+    max_vf = max(len(vcf.header.samples) * 0.01, 2)
+    record_start = (batch_num - 1) * segments
+    record_end = batch_num * segments
+    record_idx = 0
+    print("{} {} {}".format(max_vf, record_start, record_end))
+    multi_geno_ids = set([])
+    for record in vcf:
+      record_idx += 1
+      if record_idx < record_start:
+        continue
+      elif record_idx > record_end:
+        break
+      num_gt_over_2 = 0
+      for sid in record.samples:
+        s = record.samples[sid]
+        # Pick best GT
+        if s['PE_GT'] is None:
+          continue
+        elif s['SR_GT'] is None:
+          gt = s['PE_GT']
+        elif s['PE_GT'] > 0 and s['SR_GT'] == 0:
+          gt = s['PE_GT']
+        elif s['PE_GT'] == 0:
+          gt = s['SR_GT']
+        elif s['PE_GQ'] >= s['SR_GQ']:
+          gt = s['PE_GT']
+        else:
+          gt = s['SR_GT']
+        if gt > 2:
+          num_gt_over_2 += 1
+          if record.id == "gnomad-sv-v3-TEST-SMALL.chr22_BND_chr22_173":
+            print("{} {}".format(sid, num_gt_over_2))
+            print("{} {} {} {}".format(s['PE_GT'], s['PE_GQ'], s['SR_GT'], s['SR_GQ']))
+      if num_gt_over_2 > max_vf:
+        multi_geno_ids.add(record.id)
+    vcf.close()
+
+    multi_geno_ids = sorted(list(multi_geno_ids))
+    with open("multi.geno.ids.txt", "w") as f:
+      for vid in multi_geno_ids:
+        f.write(vid + "\n")
+    CODE
+
+    bgzip revise.vcf.lines.txt
+    gzip multi.geno.ids.txt
   >>>
 
   output {
