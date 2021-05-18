@@ -17,10 +17,14 @@ workflow Module04RerunSubset {
     File cohort_depth_vcf
 
     # Original genotyped Module 04 outputs for this batch
-    File genotyped_batch_pesr_vcf
-    File genotyped_batch_depth_vcf
+    File original_genotyped_batch_pesr_vcf
+    File original_genotyped_batch_depth_vcf
+    File original_batch_sr_bothside_pass
+    File original_batch_sr_background_fail
+    File original_batch_regeno_coverage_medians
 
     String sv_base_mini_docker
+    String linux_docker
   }
 
   # These two will call cache
@@ -47,13 +51,14 @@ workflow Module04RerunSubset {
       batch=batch,
       cohort_pesr_vcf=SubsetCohortPesr.filtered_vcf,
       cohort_depth_vcf=SubsetCohortDepth.filtered_vcf,
-      sv_base_mini_docker=sv_base_mini_docker
+      sv_base_mini_docker=sv_base_mini_docker,
+      linux_docker=linux_docker
   }
 
   call SubsetVcfByVID as SubsetGenotypedBatchDepth {
     input:
-      vcf=genotyped_batch_depth_vcf,
-      vcf_index=genotyped_batch_depth_vcf + ".tbi",
+      vcf=original_genotyped_batch_depth_vcf,
+      vcf_index=original_genotyped_batch_depth_vcf + ".tbi",
       vids_list=vids_list,
       output_prefix=batch + ".genotyped_batch_depth",
       sv_base_mini_docker=sv_base_mini_docker
@@ -61,18 +66,10 @@ workflow Module04RerunSubset {
 
   call SubsetVcfByVID as SubsetGenotypedBatchPesr {
     input:
-      vcf=genotyped_batch_pesr_vcf,
-      vcf_index=genotyped_batch_pesr_vcf + ".tbi",
+      vcf=original_genotyped_batch_pesr_vcf,
+      vcf_index=original_genotyped_batch_pesr_vcf + ".tbi",
       vids_list=vids_list,
       output_prefix=batch + ".genotyped_batch_pesr",
-      sv_base_mini_docker=sv_base_mini_docker
-  }
-
-  call tasks0506.ConcatVcfs as ConcatDepthVcfs {
-    input:
-      vcfs = [Module04.genotyped_depth_vcf, SubsetGenotypedBatchDepth.complement_vcf],
-      vcfs_idx = [Module04.genotyped_depth_vcf + ".tbi", SubsetGenotypedBatchDepth.complement_vcf + ".tbi"],
-      outfile_prefix=batch + ".module04_rerun_subset.depth",
       sv_base_mini_docker=sv_base_mini_docker
   }
 
@@ -84,16 +81,137 @@ workflow Module04RerunSubset {
       sv_base_mini_docker=sv_base_mini_docker
   }
 
+  call tasks0506.ConcatVcfs as ConcatDepthVcfs {
+    input:
+      vcfs = [Module04.genotyped_depth_vcf, SubsetGenotypedBatchDepth.complement_vcf],
+      vcfs_idx = [Module04.genotyped_depth_vcf + ".tbi", SubsetGenotypedBatchDepth.complement_vcf + ".tbi"],
+      outfile_prefix=batch + ".module04_rerun_subset.depth",
+      sv_base_mini_docker=sv_base_mini_docker
+  }
+
+  call MergeVidList as MergeBothsidePass {
+    input:
+    original_output_list=original_batch_sr_bothside_pass,
+    subset_output_list= Module04.sr_bothside_pass,
+    all_subset_vids_list=vids_list,
+    output_filename="~{batch}.module04_rerun_subset.sr_bothside_pass.txt",
+    linux_docker=linux_docker
+  }
+
+  call MergeVidList as MergeBackgroundFail {
+    input:
+      original_output_list=original_batch_sr_background_fail,
+      subset_output_list= Module04.sr_background_fail,
+      all_subset_vids_list=vids_list,
+      output_filename="~{batch}.module04_rerun_subset.sr_background_fail.txt",
+      linux_docker=linux_docker
+  }
+
+  call MergeRegenoCoverageMedians {
+    input:
+      original_output=original_batch_regeno_coverage_medians,
+      subset_output= Module04.regeno_coverage_medians,
+      output_filename="~{batch}.module04_rerun_subset.regeno_coverage_medians.bed",
+      linux_docker=linux_docker
+  }
+
   output {
-    File sr_bothside_pass = Module04.sr_bothside_pass
-    File sr_background_fail = Module04.sr_background_fail
-    File regeno_coverage_medians = Module04.regeno_coverage_medians
+    File sr_bothside_pass = MergeBothsidePass.out
+    File sr_background_fail = MergeBackgroundFail.out
+    File regeno_coverage_medians = MergeRegenoCoverageMedians.out
 
     File genotyped_depth_vcf = ConcatDepthVcfs.concat_vcf
     File genotyped_depth_vcf_index = ConcatDepthVcfs.concat_vcf_idx
 
     File genotyped_pesr_vcf = ConcatPesrVcfs.concat_vcf
     File genotyped_pesr_vcf_index = ConcatPesrVcfs.concat_vcf_idx
+  }
+}
+
+task MergeRegenoCoverageMedians {
+  input {
+    File original_output
+    File subset_output
+    String output_filename
+    String linux_docker
+    RuntimeAttr? runtime_attr_override
+  }
+
+  Float input_size = size([original_output, subset_output], "GB")
+  RuntimeAttr runtime_default = object {
+                                  mem_gb: 3.75,
+                                  disk_gb: ceil(10.0 + input_size * 5.0),
+                                  cpu_cores: 1,
+                                  preemptible_tries: 3,
+                                  max_retries: 1,
+                                  boot_disk_gb: 10
+                                }
+  RuntimeAttr runtime_override = select_first([runtime_attr_override, runtime_default])
+  runtime {
+    memory: "~{select_first([runtime_override.mem_gb, runtime_default.mem_gb])} GB"
+    disks: "local-disk ~{select_first([runtime_override.disk_gb, runtime_default.disk_gb])} HDD"
+    cpu: select_first([runtime_override.cpu_cores, runtime_default.cpu_cores])
+    preemptible: select_first([runtime_override.preemptible_tries, runtime_default.preemptible_tries])
+    maxRetries: select_first([runtime_override.max_retries, runtime_default.max_retries])
+    docker: linux_docker
+    bootDiskSizeGb: select_first([runtime_override.boot_disk_gb, runtime_default.boot_disk_gb])
+  }
+
+  command <<<
+    set -euxo pipefail
+    awk 'NR == FNR { query[$4] = $0; next } { if (query[$4]) { print query[$4] } else { print } }' \
+      ~{subset_output} \
+      ~{original_output} \
+      > ~{output_filename}
+  >>>
+
+  output {
+    File out = output_filename
+  }
+}
+
+task MergeVidList {
+  input {
+    File original_output_list
+    File subset_output_list
+    File all_subset_vids_list
+    String output_filename
+    String linux_docker
+    RuntimeAttr? runtime_attr_override
+  }
+
+  Float input_size = size([original_output_list, subset_output_list, all_subset_vids_list], "GB")
+  RuntimeAttr runtime_default = object {
+                                  mem_gb: 3.75,
+                                  disk_gb: ceil(10.0 + input_size * 5.0),
+                                  cpu_cores: 1,
+                                  preemptible_tries: 3,
+                                  max_retries: 1,
+                                  boot_disk_gb: 10
+                                }
+  RuntimeAttr runtime_override = select_first([runtime_attr_override, runtime_default])
+  runtime {
+    memory: "~{select_first([runtime_override.mem_gb, runtime_default.mem_gb])} GB"
+    disks: "local-disk ~{select_first([runtime_override.disk_gb, runtime_default.disk_gb])} HDD"
+    cpu: select_first([runtime_override.cpu_cores, runtime_default.cpu_cores])
+    preemptible: select_first([runtime_override.preemptible_tries, runtime_default.preemptible_tries])
+    maxRetries: select_first([runtime_override.max_retries, runtime_default.max_retries])
+    docker: linux_docker
+    bootDiskSizeGb: select_first([runtime_override.boot_disk_gb, runtime_default.boot_disk_gb])
+  }
+
+  command <<<
+    set -euxo pipefail
+    awk 'NR == FNR { query[$0] = 1; next } !query[$0]' \
+      ~{all_subset_vids_list} \
+      ~{original_output_list} \
+      > subtracted.list
+
+    sort subtracted.list ~{subset_output_list} > ~{output_filename}
+  >>>
+
+  output {
+    File out = output_filename
   }
 }
 
