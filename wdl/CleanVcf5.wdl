@@ -1041,7 +1041,7 @@ task CleanVcf5_18 {
   Float input_size = size([overlap_revise_vcf, gt5kb_dup_ids, gt5kb_del_ids, dup_revise, del_revise], "GB")
   RuntimeAttr runtime_default = object {
                                   mem_gb: 7.5,
-                                  disk_gb: ceil(10.0 + input_size * 5.0),
+                                  disk_gb: ceil(10.0 + input_size * 10.0),
                                   cpu_cores: 1,
                                   preemptible_tries: 0,
                                   max_retries: 1,
