@@ -1254,7 +1254,7 @@ task CleanVcf5_22 {
   Float input_size = size([multitagged_vcf, dup_multi_revise_vcf, del_multi_revise_vcf, all_multi_revised_list_2, new_header], "GB")
   RuntimeAttr runtime_default = object {
                                   mem_gb: 7.5,
-                                  disk_gb: ceil(10.0 + input_size * 5.0),
+                                  disk_gb: ceil(10.0 + input_size * 20.0),
                                   cpu_cores: 1,
                                   preemptible_tries: 0,
                                   max_retries: 1,
