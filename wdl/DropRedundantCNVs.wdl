@@ -85,7 +85,7 @@ task DropRedundantCNVs_1 {
   Float input_size = size(vcf, "GB")
   RuntimeAttr runtime_default = object {
                                   mem_gb: 7.5,
-                                  disk_gb: ceil(10.0 + input_size * 2),
+                                  disk_gb: ceil(10.0 + input_size * 5),
                                   cpu_cores: 1,
                                   preemptible_tries: 0,
                                   max_retries: 1,
@@ -109,8 +109,8 @@ task DropRedundantCNVs_1 {
     #Convert full VCF to BED intervals
     #Ignore CPX events with UNRESOLVED filter status
     svtk vcf2bed --split-cpx --info SVTYPE \
-      <(bcftools view -e 'INFO/SVTYPE == "CPX" && FILTER == "UNRESOLVED"' ~{vcf}) - \
-      | grep -e '^#\|DEL\|DUP\|CNV\|CPX' \
+      <(bcftools view -e 'INFO/SVTYPE == "CPX" && FILTER == "UNRESOLVED"' ~{vcf}) out.bed
+    grep -e '^#\|DEL\|DUP\|CNV\|CPX' out.bed \
       | awk -v OFS="\t" '{ if ($5=="CN0") print $1, $2, $3, $4, "DEL", $5"\n"$1, $2, $3, $4, "DUP", $5; \
         else if ($5=="DEL" || $5=="DUP") print $1, $2, $3, $4, $6, $5 }' \
       | sort -Vk1,1 -k2,2n -k3,3n -k4,4V \
