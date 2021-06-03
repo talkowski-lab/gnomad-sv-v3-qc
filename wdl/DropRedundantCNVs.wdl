@@ -23,55 +23,37 @@ workflow DropRedundantCNVs {
 
   call DropRedundantCNVs_3 {
     input:
-      intervals_preclustered_subset_bed=DropRedundantCNVs_2.intervals_preclustered_subset_bed,
+      intervals_preclustered_bed=DropRedundantCNVs_1.intervals_preclustered_bed,
       sv_pipeline_docker=sv_pipeline_docker
   }
 
   call DropRedundantCNVs_4 {
     input:
-      intervals_preclustered_subset_melted_bed=DropRedundantCNVs_3.intervals_preclustered_subset_melted_bed,
+      intervals_preclustered_subset_bed=DropRedundantCNVs_2.intervals_preclustered_subset_bed,
+      step2_intervals_preclustered_subset_bed=DropRedundantCNVs_3.step2_intervals_preclustered_subset_bed,
+      samples_list=DropRedundantCNVs_1.samples_list,
       sv_pipeline_docker=sv_pipeline_docker
   }
 
   call DropRedundantCNVs_5 {
     input:
-      intervals_clustered_bed=DropRedundantCNVs_4.intervals_clustered_bed,
+      vcf=vcf,
+      vids_to_remove_list_1=DropRedundantCNVs_4.vids_to_remove_list_1,
       intervals_preclustered_bed=DropRedundantCNVs_1.intervals_preclustered_bed,
+      step2_variants_to_resolve_list=DropRedundantCNVs_4.step2_variants_to_resolve_list,
+      contig=contig,
       sv_pipeline_docker=sv_pipeline_docker
   }
 
   call DropRedundantCNVs_6 {
     input:
-      intervals_preclustered_bed=DropRedundantCNVs_1.intervals_preclustered_bed,
-      sv_pipeline_docker=sv_pipeline_docker
-  }
-
-  call DropRedundantCNVs_7 {
-    input:
-      step2_intervals_preclustered_subset_bed=DropRedundantCNVs_6.step2_intervals_preclustered_subset_bed,
-      sv_pipeline_docker=sv_pipeline_docker
-  }
-
-  call DropRedundantCNVs_8 {
-    input:
-      vcf=vcf,
-      vids_to_remove_list_1=DropRedundantCNVs_5.vids_to_remove_list_1,
-      intervals_preclustered_bed=DropRedundantCNVs_1.intervals_preclustered_bed,
-      step2_variants_to_resolve_list=DropRedundantCNVs_7.step2_variants_to_resolve_list,
-      sv_pipeline_docker=sv_pipeline_docker
-  }
-
-  call DropRedundantCNVs_9 {
-    input:
-      vcf=vcf,
-      records_to_add_vcf=DropRedundantCNVs_8.records_to_add_vcf,
-      vids_to_remove_list_2=DropRedundantCNVs_8.vids_to_remove_list_2,
+      unsorted_vcf=DropRedundantCNVs_5.unsorted_vcf,
       contig=contig,
       sv_pipeline_docker=sv_pipeline_docker
   }
 
   output {
-    File cleaned_vcf_shard = DropRedundantCNVs_9.cleaned_vcf_shard
+    File cleaned_vcf_shard = DropRedundantCNVs_6.cleaned_vcf_shard
   }
 }
 
@@ -105,6 +87,8 @@ task DropRedundantCNVs_1 {
   command <<<
     set -euxo pipefail
 
+    bcftools query --list-samples ~{vcf} > samples.list
+
     ###PREP FILES
     #Convert full VCF to BED intervals
     #Ignore CPX events with UNRESOLVED filter status
@@ -120,6 +104,7 @@ task DropRedundantCNVs_1 {
 
   output {
     File intervals_preclustered_bed = "intervals.preclustered.bed.gz"
+    File samples_list = "samples.list"
   }
 }
 
@@ -172,176 +157,6 @@ task DropRedundantCNVs_2 {
 
 task DropRedundantCNVs_3 {
   input {
-    File intervals_preclustered_subset_bed
-    String sv_pipeline_docker
-    RuntimeAttr? runtime_attr_override
-  }
-
-  Float input_size = size(intervals_preclustered_subset_bed, "GB")
-  RuntimeAttr runtime_default = object {
-                                  mem_gb: 7.5,
-                                  disk_gb: ceil(10.0 + input_size * 2.0),
-                                  cpu_cores: 1,
-                                  preemptible_tries: 0,
-                                  max_retries: 1,
-                                  boot_disk_gb: 10
-                                }
-  RuntimeAttr runtime_override = select_first([runtime_attr_override, runtime_default])
-  runtime {
-    memory: "~{select_first([runtime_override.mem_gb, runtime_default.mem_gb])} GB"
-    disks: "local-disk ~{select_first([runtime_override.disk_gb, runtime_default.disk_gb])} HDD"
-    cpu: select_first([runtime_override.cpu_cores, runtime_default.cpu_cores])
-    preemptible: select_first([runtime_override.preemptible_tries, runtime_default.preemptible_tries])
-    maxRetries: select_first([runtime_override.max_retries, runtime_default.max_retries])
-    docker: sv_pipeline_docker
-    bootDiskSizeGb: select_first([runtime_override.boot_disk_gb, runtime_default.boot_disk_gb])
-  }
-
-  command <<<
-    set -euxo pipefail
-
-    #Melt subsetted variants
-    while read chr start end VID samples CNV; do
-      echo -e "${samples}" \
-      | sed 's/,/\n/g' \
-      | awk -v OFS="\t" -v chr=${chr} -v start=${start} -v end=${end} -v VID=${VID} -v CNV=${CNV} \
-        '{ print chr, start, end, VID, $1, CNV }'
-    done < <( zcat ~{intervals_preclustered_subset_bed} ) \
-      | bgzip -c \
-      > intervals.preclustered.subset.melted.bed.gz
-  >>>
-
-  output {
-    File intervals_preclustered_subset_melted_bed = "intervals.preclustered.subset.melted.bed.gz"
-  }
-}
-
-
-task DropRedundantCNVs_4 {
-  input {
-    File intervals_preclustered_subset_melted_bed
-    String sv_pipeline_docker
-    RuntimeAttr? runtime_attr_override
-  }
-
-  Float input_size = size(intervals_preclustered_subset_melted_bed, "GB")
-  RuntimeAttr runtime_default = object {
-                                  mem_gb: 7.5,
-                                  disk_gb: ceil(10.0 + input_size * 2.0),
-                                  cpu_cores: 1,
-                                  preemptible_tries: 0,
-                                  max_retries: 1,
-                                  boot_disk_gb: 10
-                                }
-  RuntimeAttr runtime_override = select_first([runtime_attr_override, runtime_default])
-  runtime {
-    memory: "~{select_first([runtime_override.mem_gb, runtime_default.mem_gb])} GB"
-    disks: "local-disk ~{select_first([runtime_override.disk_gb, runtime_default.disk_gb])} HDD"
-    cpu: select_first([runtime_override.cpu_cores, runtime_default.cpu_cores])
-    preemptible: select_first([runtime_override.preemptible_tries, runtime_default.preemptible_tries])
-    maxRetries: select_first([runtime_override.max_retries, runtime_default.max_retries])
-    docker: sv_pipeline_docker
-    bootDiskSizeGb: select_first([runtime_override.boot_disk_gb, runtime_default.boot_disk_gb])
-  }
-
-  command <<<
-    set -euxo pipefail
-
-    #Cluster BED intervals (50% RO)
-    svtk bedcluster -f 0.5 \
-      ~{intervals_preclustered_subset_melted_bed} - \
-      | bgzip -c \
-      > intervals.clustered.bed.gz
-  >>>
-
-  output {
-    File intervals_clustered_bed = "intervals.clustered.bed.gz"
-  }
-}
-
-
-task DropRedundantCNVs_5 {
-  input {
-    File intervals_clustered_bed
-    File intervals_preclustered_bed
-    String sv_pipeline_docker
-    RuntimeAttr? runtime_attr_override
-  }
-
-  Float input_size = size([intervals_clustered_bed, intervals_preclustered_bed], "GB")
-  RuntimeAttr runtime_default = object {
-                                  mem_gb: 7.5,
-                                  disk_gb: ceil(10.0 + input_size * 2.0),
-                                  cpu_cores: 1,
-                                  preemptible_tries: 0,
-                                  max_retries: 1,
-                                  boot_disk_gb: 10
-                                }
-  RuntimeAttr runtime_override = select_first([runtime_attr_override, runtime_default])
-  runtime {
-    memory: "~{select_first([runtime_override.mem_gb, runtime_default.mem_gb])} GB"
-    disks: "local-disk ~{select_first([runtime_override.disk_gb, runtime_default.disk_gb])} HDD"
-    cpu: select_first([runtime_override.cpu_cores, runtime_default.cpu_cores])
-    preemptible: select_first([runtime_override.preemptible_tries, runtime_default.preemptible_tries])
-    maxRetries: select_first([runtime_override.max_retries, runtime_default.max_retries])
-    docker: sv_pipeline_docker
-    bootDiskSizeGb: select_first([runtime_override.boot_disk_gb, runtime_default.boot_disk_gb])
-  }
-
-  command <<<
-    set -euo pipefail
-
-    #Get list of all variants that cluster with a complex variant,
-    # evaluate sample overlap from original intervals file,
-    # and, if overlap >50%, write that ID to be stripped from the output VCF
-    while read VIDs; do
-      #Get nonredundant list of sample IDs involved in any clustered variant
-      echo -e "${VIDs}" | sed 's/,/\n/g' \
-        | fgrep -wf - <( zcat ~{intervals_preclustered_bed} ) \
-        | cut -f5 | sort | uniq \
-        > nonredundant_samples.list
-
-      #Iterate over VIDs and print non-CPX VID if sample overlap >50%
-      while read VID samples; do
-        #Get list of samples in variant
-        echo -e "${samples}" | sed 's/,/\n/g' \
-          | sort | uniq > query_samples.list
-          nsamp=$( cat query_samples.list | wc -l )
-
-        #Compare
-        frac=$( fgrep -wf query_samples.list \
-          nonredundant_samples.list | wc -l \
-          | awk -v nsamp=${nsamp} '{ print 100*($1/nsamp) }' \
-          | cut -f1 -d\. )
-        if [ ${frac} -ge 50 ]; then
-          echo "${VID}"
-        fi
-
-        #Clean up
-        rm query_samples.list
-
-      done < <( echo -e "${VIDs}" | sed 's/,/\n/g' \
-        | fgrep -wf - <( zcat ~{intervals_preclustered_bed} ) \
-        | cut -f4,5 | sort | uniq | fgrep -v "CPX" )
-
-      #Clean up
-      rm nonredundant_samples.list
-
-    done < <( zcat ~{intervals_clustered_bed} \
-      | cut -f7 | fgrep "CPX" | grep -e "DEL\|DUP" ) \
-      | sort -V | uniq \
-      > VIDs_to_remove.list
-  >>>
-
-  output {
-    File vids_to_remove_list_1= "VIDs_to_remove.list"
-  }
-}
-
-
-
-task DropRedundantCNVs_6 {
-  input {
     File intervals_preclustered_bed
     String sv_pipeline_docker
     RuntimeAttr? runtime_attr_override
@@ -388,9 +203,11 @@ task DropRedundantCNVs_6 {
 }
 
 
-task DropRedundantCNVs_7 {
+task DropRedundantCNVs_4 {
   input {
     File step2_intervals_preclustered_subset_bed
+    File intervals_preclustered_subset_bed
+    File samples_list
     String sv_pipeline_docker
     RuntimeAttr? runtime_attr_override
   }
@@ -418,47 +235,128 @@ task DropRedundantCNVs_7 {
   command <<<
     set -euo pipefail
 
-    #Determine which events share 80% sample overlap
-    while read VIDa sa VIDb sb; do
-      na=$( echo -e "${sa}" | sed 's/,/\n/g' | sort | uniq | wc -l )
-      nb=$( echo -e "${sb}" | sed 's/,/\n/g' | sort | uniq | wc -l )
-      denom=$( echo -e "${sa},${sb}" | sed 's/,/\n/g' | sort | uniq | wc -l )
-      numer=$( echo -e "${sa}" | sed 's/,/\n/g' | { fgrep -wf - <( echo -e "${sb}" | sed 's/,/\n/g' ) || true; } \
-        | sort | uniq | wc -l )
+    python3 <<CODE | bgzip > out.vcf.gz
+    import sys
+    import gzip
+    from collections import namedtuple, defaultdict
 
-      if [ ${denom} -gt 0 ]; then
-        ovr=$(( 100 * ${numer} / ${denom} ))
-      fi
-      if [ -z ${ovr} ]; then
-        ovr=0
-      fi
-      if [ ${ovr} -ge 80 ]; then
-        echo -e "${VIDa}\n${VIDb}" \
-          | sort | uniq | paste -s -d,
-      fi
-    done < <( zcat ~{step2_intervals_preclustered_subset_bed} \
-      | cut -f4,5,10,11 ) \
-      | sort | uniq \
-      > step2.variants_to_resolve.list
+    import pysam
+    import numpy as np
+    from scipy import sparse
+    from scipy.sparse import csgraph
+
+    BedCall = namedtuple('BedCall', 'chrom start end name samples svtype'.split())
+
+    def reciprocal_overlap(a, b, frac):
+      if a.chrom != b.chrom:
+        return False
+      if a.start >= b.end or b.start >= a.end:
+        return False
+      ov = min(a.end, b.end) - max(a.start, b.start)
+      return (ov / float(max(a.end - a.start, b.end - b.start))) >= frac
+
+
+    def sample_overlap(samples_a, samples_b, denom, frac):
+      if len(samples_a) == 0 or len(samples_b) == 0:
+        return True
+      ov = len(samples_a.intersection(samples_b))
+      return (ov / float(denom)) >= frac
+
+
+    def read_intervals(path, samples_dict):
+      intervals = []
+      with gzip.open(path, "rb") as f:
+        for lineb in f:
+          tokens = lineb.decode('utf-8').strip().split('\t')
+          sample_indexes = set([samples_dict[s] for s in tokens[4].split(',')])
+          intervals.append(BedCall(tokens[0], int(tokens[1]), int(tokens[2]), tokens[3], sample_indexes, tokens[5]))
+        return intervals
+
+    # Save memory using sample id indexing
+    with open("~{samples_list}") as f:
+      samples_list = [line.strip() for line in f]
+    num_samples = len(samples_list)
+    samples_dict = {samples_list[i]: i for i in range(num_samples)}
+
+    intervals = read_intervals(~{intervals_preclustered_subset_bed}, samples_dict)
+    num_intervals = len(intervals)
+
+    # 50% RO and sample overlap in subsetted intervals
+    # Generate sparse graph for clustering
+    RO_FRAC = 0.5
+    G = sparse.eye(len(intervals), dtype=np.uint8, format='lil')
+    for i in range(num_intervals):
+      ro_indexes = [j for j in range(i) if reciprocal_overlap(intervals[i], intervals[j], RO_FRAC)]
+      for j in ro_indexes:
+        G[i, j] = 1
+
+    # Compute clusters
+    n_comp, cluster_labels = csgraph.connected_components(G, connection='weak', directed=False)
+    clusters = defaultdict(list)
+    for i in range(len(cluster_labels)):
+      clusters[cluster_labels[i]].append(i)
+
+    # Find CNVs in clusters containing at least one CPX
+    SAMPLE_FRAC = 0.5
+    vids_to_remove = set([])
+    for cluster in clusters.values():
+      cnvs = [i for i in cluster if "DEL" in intervals[i].name or "DUP" in intervals[i].name]
+      cpx = [i for i in cluster if "CPX" in intervals[i].name]
+      for i in cnvs:
+        for j in cpx:
+          if sample_overlap(intervals[i].samples, intervals[j].samples, len(intervals[i].samples), SAMPLE_FRAC):
+            vids_to_remove.add(intervals[i].name + "\n")
+            break
+
+    with open("VIDs_to_remove.list", 'w') as f:
+      f.writelines(sorted(list(vids_to_remove)))
+
+    # Find clusters of CNVs only, using 80% overlap parameters
+    with gzip.open("~{step2_intervals_preclustered_subset_bed}") as f:
+      intervals2 = []
+      for line in f:
+        tokens = line.decode('utf-8').strip().split('\t')
+        samples_a = set([samples_dict[s] for s in tokens[1].split(',')])
+        samples_b = set([samples_dict[s] for s in tokens[3].split(',')])
+        intervals2.append((tokens[0], samples_a, tokens[2], samples_b))
+
+    num_intervals2 = len(intervals2)
+    vids_to_resolve_list = []
+    SAMPLE_FRAC2 = 0.8
+    for interval in intervals2:
+      samples_a = interval[1]
+      samples_b = interval[3]
+      union = samples_a.union(samples_b)
+      if sample_overlap(samples_a, samples_b, len(union), SAMPLE_FRAC2):
+        vids_to_resolve_list.append("{}\n".format(",".join(sorted([interval[0], interval[2]]))))
+
+    vids_to_resolve_list = sorted(list(set(vids_to_resolve_list)))
+
+    with open("step2.variants_to_resolve.list", 'w') as f:
+      f.writelines(vids_to_resolve_list)
+
+    CODE
   >>>
 
   output {
     File step2_variants_to_resolve_list = "step2.variants_to_resolve.list"
+    File vids_to_remove_list_1 = "VIDs_to_remove.list"
   }
 }
 
 
-task DropRedundantCNVs_8 {
+task DropRedundantCNVs_5 {
   input {
     File vcf
     File vids_to_remove_list_1
     File intervals_preclustered_bed
     File step2_variants_to_resolve_list
+    String contig
     String sv_pipeline_docker
     RuntimeAttr? runtime_attr_override
   }
 
-  Float input_size = size([vcf, intervals_preclustered_bed, step2_variants_to_resolve_list], "GB")
+  Float input_size = size([vcf, intervals_preclustered_bed, intervals_preclustered_bed, step2_variants_to_resolve_list], "GB")
   RuntimeAttr runtime_default = object {
                                   mem_gb: 7.5,
                                   disk_gb: ceil(10.0 + input_size * 5.0),
@@ -481,7 +379,7 @@ task DropRedundantCNVs_8 {
   command <<<
     set -euxo pipefail
 
-    python3 <<CODE
+    python3 <<CODE | bgzip > drop_redundant_cnvs_5.~{contig}.vcf.gz
     import sys
     import pysam
     import gzip
@@ -512,12 +410,13 @@ task DropRedundantCNVs_8 {
         all_partners.update(partners[vid])
 
     vids_to_remove.update(all_partners)
-    with open("vids_to_remove_2.list", 'w') as f:
-        f.writelines(sorted([v+"\n" for v in vids_to_remove]))
+    #with open("vids_to_remove_2.list", 'w') as f:
+    #    f.writelines(sorted([v+"\n" for v in vids_to_remove]))
 
     sys.stderr.write("Scanning vcf...\n")
     vcf = pysam.VariantFile("~{vcf}")
     records = {r.id: r for r in vcf if r.id in all_partners}
+    vcf.close()
 
     def count_gts(record):
         result = [0, 0, 0]
@@ -535,49 +434,58 @@ task DropRedundantCNVs_8 {
         return sorted(scores.items(), key=lambda x: x[1])[-1][0]
 
     sys.stderr.write("Generating records...\n")
-    with open("records_to_add.vcf", 'w') as f:
-        processed_vids = set([])
-        for vid in vids_list:
-            if vid in processed_vids:
-                continue
-            vid_partners = partners[vid]
-            processed_vids.update(vid_partners)
-            partner_intervals = [intervals[p] for p in vid_partners]
-            most_samples_vid = sorted(partner_intervals, key=lambda x : len(x[4].split(',')))[-1][3]
-            x = sorted(partner_intervals, key=lambda x : len(x[4].split(',')))
-            best_genotype_vid = None
-            best_non_ref = -1
-            best_ref = -1
-            scores = {p: count_gts(records[p]) for p in vid_partners}
-            scores_non_ref = {p: scores[p][0] for p in vid_partners if scores[p][0] > 0}
-            scores_ref = {p: scores[p][1] for p in vid_partners if scores[p][1] > 0}
-            scores_no_call = {p: scores[p][2] for p in vid_partners if scores[p][2] > 0}
-            if len(scores_non_ref) > 0:
-                best_genotype_vid = get_best_score_vid(scores_non_ref)
-            elif len(scores_ref) > 0:
-                best_genotype_vid = get_best_score_vid(scores_ref)
-            else:
-                best_genotype_vid = get_best_score_vid(scores_no_call)
-            s1 = str(records[most_samples_vid]).split('\t')[0:9]
-            s2 = str(records[best_genotype_vid]).split('\t', 9)
-            f.write("\t".join(s1) + "\t" + s2[9])
+    records_to_add = []
+    processed_vids = set([])
+    for vid in vids_list:
+        if vid in processed_vids:
+            continue
+        vid_partners = partners[vid]
+        processed_vids.update(vid_partners)
+        partner_intervals = [intervals[p] for p in vid_partners]
+        most_samples_vid = sorted(partner_intervals, key=lambda x : len(x[4].split(',')))[-1][3]
+        x = sorted(partner_intervals, key=lambda x : len(x[4].split(',')))
+        best_genotype_vid = None
+        best_non_ref = -1
+        best_ref = -1
+        scores = {p: count_gts(records[p]) for p in vid_partners}
+        scores_non_ref = {p: scores[p][0] for p in vid_partners if scores[p][0] > 0}
+        scores_ref = {p: scores[p][1] for p in vid_partners if scores[p][1] > 0}
+        scores_no_call = {p: scores[p][2] for p in vid_partners if scores[p][2] > 0}
+        if len(scores_non_ref) > 0:
+            best_genotype_vid = get_best_score_vid(scores_non_ref)
+        elif len(scores_ref) > 0:
+            best_genotype_vid = get_best_score_vid(scores_ref)
+        else:
+            best_genotype_vid = get_best_score_vid(scores_no_call)
+        sys.stderr.write(most_samples_vid + "\n")
+        s1 = str(records[most_samples_vid]).split('\t')[0:9]
+        s2 = str(records[best_genotype_vid]).split('\t', 9)
+        records_to_add.append("\t".join(s1) + "\t" + s2[9])
+
+    sys.stderr.write("Writing vcf...\n")
+    vcf = pysam.VariantFile("~{vcf}")
+    sys.stdout.write(str(vcf.header))
+    for record in vcf:
+      if record.id not in vids_to_remove:
+        sys.stdout.write(str(record))
+    vcf.close()
+
+    for record in records_to_add:
+      sys.stdout.write(record)
+
     CODE
 
-    cat ~{vids_to_remove_list_1} vids_to_remove_2.list | sort | uniq > vids_to_remove.list
   >>>
 
   output {
-    File records_to_add_vcf = "records_to_add.vcf"
-    File vids_to_remove_list_2 = "vids_to_remove.list"
+    File unsorted_vcf = "drop_redundant_cnvs_5.~{contig}.vcf.gz"
   }
 }
 
 
-task DropRedundantCNVs_9 {
+task DropRedundantCNVs_6 {
   input {
-    File vcf
-    File records_to_add_vcf
-    File vids_to_remove_list_2
+    File unsorted_vcf
     String contig
     String sv_pipeline_docker
     RuntimeAttr? runtime_attr_override
@@ -585,7 +493,7 @@ task DropRedundantCNVs_9 {
 
   String outfile_name = contig + ".shard.no_CNV_redundancies.vcf.gz"
 
-  Float input_size = size([], "GB")
+  Float input_size = size(unsorted_vcf, "GB")
   RuntimeAttr runtime_default = object {
                                   mem_gb: 7.5,
                                   disk_gb: ceil(10.0 + input_size * 2.0),
@@ -609,11 +517,9 @@ task DropRedundantCNVs_9 {
     set -euxo pipefail
 
     ###CLEAN UP FINAL OUTPUT
-    zcat ~{vcf} \
-      | { fgrep -wvf ~{vids_to_remove_list_2} || true; } \
-      | cat - ~{records_to_add_vcf} \
+    zcat ~{unsorted_vcf} \
       | vcf-sort \
-      | bgzip -c \
+      | bgzip \
       > ~{outfile_name}
   >>>
 
