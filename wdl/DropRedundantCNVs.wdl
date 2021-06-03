@@ -30,7 +30,7 @@ workflow DropRedundantCNVs {
   call DropRedundantCNVs_4 {
     input:
       intervals_preclustered_subset_bed=DropRedundantCNVs_2.intervals_preclustered_subset_bed,
-      step2_intervals_preclustered_subset_bed=DropRedundantCNVs_3.step2_intervals_preclustered_subset_bed,
+      step2_intervals_preclustered_subset_txt=DropRedundantCNVs_3.step2_intervals_preclustered_subset_txt,
       samples_list=DropRedundantCNVs_1.samples_list,
       sv_pipeline_docker=sv_pipeline_docker
   }
@@ -193,26 +193,29 @@ task DropRedundantCNVs_3 {
       | awk -v FS="\t" '{ if ($4!=$10 && $6==$12) print $0 }' \
       | awk -v OFS="\t" '$4 ~ /DEL|DUP/ { print $0 }' \
       | awk -v OFS="\t" '$10 ~ /DEL|DUP/ { print $0 }' \
-      | bgzip -c \
-      > step2.intervals.preclustered.subset.bed.gz
+      | cut -f4,5,10,11 \
+      | sort \
+      | uniq \
+      | gzip \
+      > step2.intervals.preclustered.subset.txt.gz
   >>>
 
   output {
-    File step2_intervals_preclustered_subset_bed = "step2.intervals.preclustered.subset.bed.gz"
+    File step2_intervals_preclustered_subset_txt = "step2.intervals.preclustered.subset.txt.gz"
   }
 }
 
 
 task DropRedundantCNVs_4 {
   input {
-    File step2_intervals_preclustered_subset_bed
+    File step2_intervals_preclustered_subset_txt
     File intervals_preclustered_subset_bed
     File samples_list
     String sv_pipeline_docker
     RuntimeAttr? runtime_attr_override
   }
 
-  Float input_size = size(step2_intervals_preclustered_subset_bed, "GB")
+  Float input_size = size(step2_intervals_preclustered_subset_txt, "GB")
   RuntimeAttr runtime_default = object {
                                   mem_gb: 7.5,
                                   disk_gb: ceil(10.0 + input_size * 2.0),
@@ -278,7 +281,7 @@ task DropRedundantCNVs_4 {
     num_samples = len(samples_list)
     samples_dict = {samples_list[i]: i for i in range(num_samples)}
 
-    intervals = read_intervals(~{intervals_preclustered_subset_bed}, samples_dict)
+    intervals = read_intervals("~{intervals_preclustered_subset_bed}", samples_dict)
     num_intervals = len(intervals)
 
     # 50% RO and sample overlap in subsetted intervals
@@ -312,7 +315,7 @@ task DropRedundantCNVs_4 {
       f.writelines(sorted(list(vids_to_remove)))
 
     # Find clusters of CNVs only, using 80% overlap parameters
-    with gzip.open("~{step2_intervals_preclustered_subset_bed}") as f:
+    with gzip.open("~{step2_intervals_preclustered_subset_txt}") as f:
       intervals2 = []
       for line in f:
         tokens = line.decode('utf-8').strip().split('\t')
