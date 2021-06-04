@@ -307,7 +307,7 @@ task SvtkVcfCluster {
     RuntimeAttr? runtime_attr_override
   }
 
-  Float default_mem_gb = 3.75 + (60.0 * (num_vids / 19000.0) * (num_samples / 140000.0))
+  Float default_mem_gb = 3.75 + (120.0 * (num_vids / 19000.0) * (num_samples / 140000.0))
   String output_prefix = "~{prefix}"
   RuntimeAttr runtime_default = object {
                                   mem_gb: default_mem_gb,

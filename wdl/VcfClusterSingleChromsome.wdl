@@ -158,10 +158,10 @@ task LocalizeContigVcfs {
   }
 
   RuntimeAttr runtime_default = object {
-    mem_gb: 1.0,
+    mem_gb: 3.75,
     disk_gb: ceil(10 + size(vcfs, "GiB") * 1.2),
     cpu_cores: 1,
-    preemptible_tries: 3,
+    preemptible_tries: 0,
     max_retries: 1,
     boot_disk_gb: 10
   }

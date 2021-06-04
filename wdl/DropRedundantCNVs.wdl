@@ -217,7 +217,7 @@ task DropRedundantCNVs_4 {
 
   Float input_size = size(step2_intervals_preclustered_subset_txt, "GB")
   RuntimeAttr runtime_default = object {
-                                  mem_gb: 7.5,
+                                  mem_gb: 30,
                                   disk_gb: ceil(10.0 + input_size * 2.0),
                                   cpu_cores: 1,
                                   preemptible_tries: 0,
