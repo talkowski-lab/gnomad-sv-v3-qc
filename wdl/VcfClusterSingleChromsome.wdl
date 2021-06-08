@@ -298,7 +298,7 @@ task FixMultiallelicRecords {
                                   mem_gb: 3.75,
                                   disk_gb: ceil(base_disk_gb + input_size * input_size_fraction),
                                   cpu_cores: 1,
-                                  preemptible_tries: 3,
+                                  preemptible_tries: 0,
                                   max_retries: 1,
                                   boot_disk_gb: 10
                                 }
@@ -346,7 +346,7 @@ task FixEvidenceTags {
                                   mem_gb: 1.0,
                                   disk_gb: ceil(base_disk_gb + input_size * input_size_ratio),
                                   cpu_cores: 1,
-                                  preemptible_tries: 3,
+                                  preemptible_tries: 0,
                                   max_retries: 1,
                                   boot_disk_gb: 10
                                 }
