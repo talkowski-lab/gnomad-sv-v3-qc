@@ -499,7 +499,7 @@ task DropRedundantCNVs_6 {
   Float input_size = size(unsorted_vcf, "GB")
   RuntimeAttr runtime_default = object {
                                   mem_gb: 7.5,
-                                  disk_gb: ceil(10.0 + input_size * 2.0),
+                                  disk_gb: ceil(10.0 + input_size * 20.0),
                                   cpu_cores: 1,
                                   preemptible_tries: 0,
                                   max_retries: 1,
